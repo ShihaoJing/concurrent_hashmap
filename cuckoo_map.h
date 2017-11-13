@@ -33,16 +33,16 @@ private:
     for (int i = 0; i < oldCapacity; ++i) {
       if (old_primary_table[i] != nullptr) {
         add(*old_primary_table[i]);
-        delete(old_primary_table[i]);
+        delete old_primary_table[i];
       }
       if (old_secondary_table[i] != nullptr) {
         add(*old_secondary_table[i]);
-        delete(old_secondary_table[i]);
+        delete old_secondary_table[i];
       }
     }
 
-    delete(old_primary_table);
-    delete(old_secondary_table);
+    delete [] old_primary_table;
+    delete [] old_secondary_table;
   }
 public:
   explicit cuckoo_map(size_t hashpower) : BaseMap<T>(hashpower), secondary_table(new T*[hashsize(hashpower)])
@@ -99,7 +99,7 @@ public:
 
     // to avoid memory leak
     key = *x;
-    delete(x);
+    delete x;
 
     resize();
     return add(key);
@@ -117,13 +117,13 @@ public:
 
     if (this->primary_table[hv1 & hashmask(this->cap)] != nullptr &&
         *(this->primary_table[hv1 & hashmask(this->cap)]) == key) {
-      delete(this->primary_table[hv1 & hashmask(this->cap)]);
+      delete this->primary_table[hv1 & hashmask(this->cap)];
       this->primary_table[hv1 & hashmask(this->cap)] = nullptr;
       return true;
     }
     else if (secondary_table[hv2 & hashmask(this->cap)] != nullptr &&
         *(secondary_table[hv2 & hashmask(this->cap)]) == key) {
-      delete(this->secondary_table[hv2 & hashmask(this->cap)]);
+      delete this->secondary_table[hv2 & hashmask(this->cap)];
       this->secondary_table[hv2 & hashmask(this->cap)] = nullptr;
       return true;
     }

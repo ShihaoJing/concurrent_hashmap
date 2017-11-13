@@ -8,6 +8,7 @@
 #include "concurt_map.h"
 #include "transct_map.h"
 #include "cuckoo_map.h"
+#include "phasedcuckoo_map.h"
 #include "ProbFunc.h"
 #include <unistd.h>
 #include <thread>
@@ -162,6 +163,9 @@ int main(int argc, char** argv) {
   }
   else if (test == 'k') {
     bench<cuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
+  }
+  else if (test == 'p') {
+    bench<phasedcuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
   }
   else if (test == 'c') {
     bench<concurt_map<int, QuadraticProb>>(keyrange, ops, hashpower, ratio, threads);

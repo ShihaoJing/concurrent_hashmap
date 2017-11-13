@@ -31,11 +31,11 @@ class seq_map : public BaseMap<T> {
     for (int i = 0; i < oldCapacity; ++i) {
       if (old_primary_table[i] != nullptr) {
         add(*old_primary_table[i]);
-        delete(old_primary_table[i]);
+        delete old_primary_table[i];
       }
     }
 
-    delete(old_primary_table);
+    delete [] old_primary_table;
   }
 
 public:
@@ -99,7 +99,7 @@ public:
 
     while (this->primary_table[next_hv & hashmask(this->cap)] != nullptr) {
       if (*(this->primary_table[next_hv & hashmask(this->cap)]) == key) {
-        delete(this->primary_table[next_hv & hashmask(this->cap)]);
+        delete this->primary_table[next_hv & hashmask(this->cap)];
         --this->size_;
         this->primary_table[next_hv & hashmask(this->cap)] = nullptr;
         return true;
