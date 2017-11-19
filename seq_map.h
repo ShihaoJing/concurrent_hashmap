@@ -6,127 +6,133 @@
 #define PARALLEL_CONCURRENCY_SEQ_MAP_H
 
 #include "map.h"
+#include <unordered_set>
 #include <cstddef>
 #include <cstdint>
 #include <random>
 #include <iostream>
 
-template <typename T, typename ProbFunc>
-class seq_map : public BaseMap<T> {
-  ProbFunc probFunc;
+template <typename T, typename Hash = std::hash<T>>
+class seq_map {
+  node<T> *nodes;
+  size_t cap;
+  size_t count;
+  Hash h;
+
+  void validate() {
+    std::unordered_set<T> validation;
+    for (int i = 0; i < cap; ++i) {
+      if (nodes[i].state == node_state::IN_USE) {
+        if (validation.insert(nodes[i].key).second == false)
+          throw std::logic_error("Unexpected case in validation");
+      }
+    }
+  }
 
   void resize() {
-    std::cout << "resize happening" << std::endl;
-    size_t oldCapacity = this->cap;
-    this->cap = this->cap << 1;
-    
-    T **old_primary_table = this->primary_table;
-    
-    this->primary_table = new T*[this->cap];
+    std::cout << "resizing\n";
+    count = 0;
 
-    for (int i = 0; i < this->cap; ++i) {
-      this->primary_table[i] = nullptr;
-    }
+    size_t tmp_cap = cap;
+    auto tmp_nodes = nodes;
 
-    for (int i = 0; i < oldCapacity; ++i) {
-      if (old_primary_table[i] != nullptr) {
-        add(*old_primary_table[i]);
-        delete old_primary_table[i];
+    cap = (cap << 1);
+    nodes = new node<T>[cap];
+
+    for (int i = 0; i < tmp_cap; ++i) {
+      if (tmp_nodes[i].state == node_state::IN_USE) {
+        add(tmp_nodes[i].key);
       }
     }
 
-    delete [] old_primary_table;
+    delete [] tmp_nodes;
   }
 
 public:
-  explicit seq_map(size_t hashpower) : BaseMap<T>(hashpower), probFunc() { }
+  explicit seq_map(size_t capacity): nodes(new node<T>[hashsize(capacity)]),
+                                      cap(hashsize(capacity)), count(0) { }
+  ~seq_map() { delete [] nodes; }
 
-  bool contains(T key) override {
-    const void *kp = &key;
-    // TODO fix: length of key may not be sizeof(key)
-    int len = sizeof(key);
+  bool contains(T key) const {
+    size_t hv = h(key);
 
-    int iter = 0;
-    uint32_t hv = 0;
-    hash(kp, len, hashseed, &hv);
-  
-    uint32_t next_hv = probFunc(hv,iter++, kp, len);
-
-    while (this->primary_table[next_hv & hashmask(this->cap)] != nullptr) {
-      if (*(this->primary_table[next_hv & hashmask(this->cap)]) == key) {
+    for (int i = 1; i <= cap; ++i) {
+      size_t idx = hv & hashmask(cap);
+      if (nodes[idx].state == node_state::FREE) {
+        return false;
+      }
+      if (nodes[idx].state == node_state::IN_USE
+          && nodes[idx].key == key) {
         return true;
       }
-      next_hv = probFunc(hv,iter++, kp, len);
+      //  Quadratic prob
+      hv = prob(hv, i);
     }
 
     return false;
   }
 
   bool add(T key) {
-    const void *kp = &key;
-    // TODO fix: length of key may not be sizeof(key)
-    int len = sizeof(key);
+    if ((count << 1) > cap)
+      resize();
 
-    int iter = 0;
-    uint32_t hv = 0;
-    hash(kp, len, hashseed, &hv);
-  
-    uint32_t next_hv = probFunc(hv,iter++, kp, len);
+    if (contains(key))
+      return false;
 
-    while (this->primary_table[next_hv & hashmask(this->cap)] != nullptr) {
-      if (*(this->primary_table[next_hv & hashmask(this->cap)]) == key) {
-        return false;
+    size_t hv = h(key);
+
+    for (int i = 1; i <= cap; ++i) {
+      size_t idx = hv & hashmask(cap);
+      if (nodes[idx].state == node_state::FREE || nodes[idx].state == node_state::ERASED) {
+        ++count;
+        nodes[idx].key = std::move(key);
+        nodes[idx].state = node_state::IN_USE;
+        return true;
       }
-      next_hv = probFunc(hv,iter++, kp, len);
+
+      hv = prob(hv, i);
     }
 
-    ++this->size_;
-    this->primary_table[next_hv & hashmask(this->cap)] = new T(key);
-    
-    return true;
+    throw std::logic_error("Unexpected case in add");
   }
 
   bool remove(T key) {
-    const void *kp = &key;
-    // TODO fix: length of key may not be sizeof(key)
-    int len = sizeof(key);
+    if (!contains(key))
+      return false;
 
-    int iter = 0;
-    uint32_t hv = 0;
-    hash(kp, len, hashseed, &hv);
-    
-    uint32_t next_hv = probFunc(hv,iter++, kp, len);
+    size_t hv = h(key);
 
-    while (this->primary_table[next_hv & hashmask(this->cap)] != nullptr) {
-      if (*(this->primary_table[next_hv & hashmask(this->cap)]) == key) {
-        delete this->primary_table[next_hv & hashmask(this->cap)];
-        --this->size_;
-        this->primary_table[next_hv & hashmask(this->cap)] = nullptr;
+    for (int i = 1; i <= cap; ++i) {
+      size_t idx = hv & hashmask(cap);
+      if (nodes[idx].state == node_state::IN_USE
+          && nodes[idx].key == key) {
+        --count;
+        nodes[idx].state = node_state::ERASED;
         return true;
       }
-      next_hv = probFunc(hv,iter++, kp, len);
+
+      hv = prob(hv, i);
     }
 
-    return false;
+    throw std::logic_error("Unexpected case in remove");
   }
 
   size_t size() {
+    std::cout << "validating in size" << std::endl;
+    validate();
+
+
     size_t ret = 0;
-    for (int i = 0; i < this->cap; ++i) {
-      if (this->primary_table[i] != nullptr)
+
+    for (int i = 0; i < cap; ++i) {
+      if (nodes[i].state == node_state::IN_USE) {
         ++ret;
+      }
     }
+
     return ret;
   }
 
-  void populate(unsigned range) {
-    std::random_device r;
-    std::default_random_engine e(r());
-    std::uniform_int_distribution<int> uniform_dist(0, range);
-    for (int i = 0; i < 1024; ++i) {
-      add(uniform_dist(e));
-    }
-  }
 };
 
 #endif //PARALLEL_CONCURRENCY_SEQ_MAP_H

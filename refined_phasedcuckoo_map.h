@@ -2,8 +2,8 @@
 // Created by Shihao Jing on 11/12/17.
 //
 
-#ifndef PARALLEL_CONCURRENCY_PHASEDCUCKOO_MAP_H
-#define PARALLEL_CONCURRENCY_PHASEDCUCKOO_MAP_H
+#ifndef PARALLEL_CONCURRENCY_REFINED_PHASEDCUCKOO_MAP_H
+#define PARALLEL_CONCURRENCY_REFINED_PHASEDCUCKOO_MAP_H
 
 #include <cstddef>
 #include <unordered_map>
@@ -11,72 +11,15 @@
 #include <algorithm>
 #include <list>
 #include <cmath>
-
-#define LIMIT 100
-#define PROBE_SIZE 15
-#define THRESHOLD  10
-
-template <typename T>
-class set {
- private:
-  T **data;
-  size_t count;
- public:
-  set() : data(new T*[PROBE_SIZE]), count(0) {
-    for (int i = 0; i < PROBE_SIZE; ++i) {
-      data[i] = nullptr;
-    }
-  }
-
-  ~set() {
-    for (int i = 0; i < count; ++i)
-      delete data[i];
-    delete [] data;
-  }
-
-  size_t size() {
-    return count;
-  }
-
-  bool contains(T key) {
-    for (int i = 0; i < count; ++i) {
-      if (*(data[i]) == key) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  T get(size_t idx) {
-    return *(data[idx]);
-  }
-
-  void add(T key) {
-    data[count++] = new T(key);
-  }
-
-  bool remove(T key) {
-    for (int i = 0; i < count; ++i) {
-      if (*(data[i]) == key) {
-        delete data[i];
-        data[i] = nullptr;
-        for (int j = i+1; j < count; ++j) {
-          data[i++] = data[j];
-          data[j] = nullptr;
-        }
-        --count;
-        return true;
-      }
-    }
-    return false;
-  }
-};
+#include <atomic>
 
 template <typename T, typename Hash = std::hash<T>>
-class phasedcuckoo_map {
+class refined_phasedcuckoo_map {
  private:
   set<T>* tables[2];
   std::mutex* locks[2];
+  //std::mutex resize_lock;
+  std::atomic_flag resize_lock = ATOMIC_FLAG_INIT;
   size_t hashpower;
   size_t cap;
   size_t lock_cap;
@@ -95,6 +38,7 @@ class phasedcuckoo_map {
         }
       }
     }
+    std::cout << lock_cap << std::endl;
   }
 
   size_t hash0(T y) {
@@ -106,11 +50,15 @@ class phasedcuckoo_map {
   }
 
   void lock_acquire(T key) {
+    while (resize_lock.test_and_set(std::memory_order_acquire)); // acquire resize lock
+
     size_t hv0 = hash0(key);
     size_t hv1 = hash1(key);
 
     locks[0][hv0 & hashmask(lock_cap)].lock();
     locks[1][hv1 & hashmask(lock_cap)].lock();
+
+    resize_lock.clear(std::memory_order_release);  // release lock
   }
 
   void lock_release(T key) {
@@ -146,6 +94,8 @@ class phasedcuckoo_map {
   }
 
   void resize(int old_capacity) {
+    while (resize_lock.test_and_set(std::memory_order_acquire)); // acquire resize lock
+
     for (size_t i = 0; i < lock_cap; ++i) {
       locks[0][i].lock();
     }
@@ -153,8 +103,9 @@ class phasedcuckoo_map {
 
     if (old_capacity != cap) {
       for (size_t i = 0; i < lock_cap; ++i) {
-        locks[0][i].unlock();
+            locks[0][i].unlock();
       }
+      resize_lock.clear(std::memory_order_release);  // release lock
       return; // someone has resized before
     }
 
@@ -180,6 +131,15 @@ class phasedcuckoo_map {
     for (size_t i = 0; i < lock_cap; ++i) {
       locks[0][i].unlock();
     }
+
+    delete [] locks[0];
+    delete [] locks[1];
+
+    lock_cap = (lock_cap << 1);
+    locks[0] = new std::mutex[lock_cap];
+    locks[1] = new std::mutex[lock_cap];
+
+    resize_lock.clear(std::memory_order_release);  // release lock
   }
 
   bool relocate(int i, size_t hvi) {
@@ -237,7 +197,7 @@ class phasedcuckoo_map {
   }
 
  public:
-  explicit phasedcuckoo_map(size_t capacity) : tables{new set<T>[hashsize(capacity)], new set<T>[hashsize(capacity)]},
+  explicit refined_phasedcuckoo_map(size_t capacity) : tables{new set<T>[hashsize(capacity)], new set<T>[hashsize(capacity)]},
                                                locks{new std::mutex[hashsize(LOCK_POWER)], new std::mutex[hashsize(LOCK_POWER)]},
                                                hashpower(capacity),
                                                cap(hashsize(capacity)), lock_cap(hashsize(LOCK_POWER)), size_(0)
@@ -250,10 +210,6 @@ class phasedcuckoo_map {
 
     size_t hv0 = hash0(key);
     size_t hv1 = hash1(key);
-
-    if (hv0 == hv1) {
-      throw std::logic_error("Unexpected: sample hash");
-    }
 
     if (tables[0][hv0 & hashmask(cap)].contains(key)) {
       tables[0][hv0 & hashmask(cap)].remove(key);
@@ -280,9 +236,6 @@ class phasedcuckoo_map {
 
     size_t hv0 = hash0(key);
     size_t hv1 = hash1(key);
-    if (hv0 == hv1) {
-      throw std::logic_error("Unexpected: sample hash");
-    }
 
     if (tables[0][hv0 & hashmask(cap)].contains(key) || tables[1][hv1 & hashmask(cap)].contains(key)) {
       lock_release(key);

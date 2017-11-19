@@ -5,6 +5,19 @@
 #ifndef PARALLEL_CONCURRENCY_MAP_H_H
 #define PARALLEL_CONCURRENCY_MAP_H_H
 
+enum class node_state {
+  FREE,
+  IN_USE,
+  ERASED
+};
+
+template<typename T>
+struct node {
+  T key;
+  node_state state = node_state::FREE;
+};
+
+
 #include <cstddef>
 template <typename T>
 class BaseMap {

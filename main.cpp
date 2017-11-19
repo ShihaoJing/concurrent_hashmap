@@ -5,11 +5,10 @@
 #include "hash.h"
 #include "murmur3_hash.h"
 #include "seq_map.h"
-#include "concurt_map.h"
-#include "transct_map.h"
 #include "cuckoo_map.h"
 #include "phasedcuckoo_map.h"
-#include "ProbFunc.h"
+#include "refined_phasedcuckoo_map.h"
+#include <unordered_set>
 #include <unistd.h>
 #include <thread>
 #include <iostream>
@@ -20,8 +19,8 @@ uint32_t hashseed2;
 hash_func hash;
 
 void hash_init() {
-  hashseed = rand();
-  hashseed2 = rand();
+  hashseed = 1240981;
+  hashseed2 = 12590812;
   hash = MurmurHash3_x86_32;
 }
 
@@ -61,16 +60,18 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
   for (int j = 0; j < nthreads; ++j)
     inserted[j] = removed[j] = 0;
 
-
+  std::unordered_set<int> set;
   auto work = [&](int tid) {
     for (int i = 0; i < iters; ++i) {
       int key = key_rand(e);
       int action = ratio_rand(e);
       if (action <= ratio) {
+        //set.insert(key);
         if (my_set.add(key))
           ++inserted[tid];
       }
       else {
+        //set.erase(key);
         if (my_set.remove(key))
           ++removed[tid];
       }
@@ -108,6 +109,7 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
 
   cout << "expect_size: " << expect_size << endl;
   cout << "set_size     " << set_size << endl;
+  cout << "std set size " << set.size() << endl;
 
   if (expect_size == set_size)
     cout << "expect_size == my_set.size()" << endl;
@@ -131,7 +133,6 @@ int main(int argc, char** argv) {
   unsigned ratio    = 60;
   unsigned threads  = 8;
   char     test     = 's';
-  char     prob     = 'L';
 
   // parse the command-line options.  see help() for more info
   while ((opt = getopt(argc, argv, "hr:o:c:R:m:n:t:p:")) != -1) {
@@ -154,12 +155,11 @@ int main(int argc, char** argv) {
   cout << "  insert/remove:        " << ratio << "/" << (100 - ratio) << endl;
   cout << "  threads:              " << threads << endl;
   cout << "  test name:            " << test << endl;
-  cout << "  prob:                 " << prob << endl;
   cout << endl;
 
   // run the microbenchmark
   if (test == 's') {
-    bench<seq_map<int, QuadraticProb>>(keyrange, ops, hashpower, ratio, threads);
+    bench<seq_map<int>>(keyrange, ops, hashpower, ratio, threads);
   }
   else if (test == 'k') {
     bench<cuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
@@ -167,10 +167,9 @@ int main(int argc, char** argv) {
   else if (test == 'p') {
     bench<phasedcuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
   }
-  else if (test == 'c') {
-    bench<concurt_map<int, QuadraticProb>>(keyrange, ops, hashpower, ratio, threads);
+  else if (test == 'r') {
+    bench<refined_phasedcuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
   }
-  else if (test == 't') {
-    bench<transct_map<int, QuadraticProb>>(keyrange, ops, hashpower, ratio, threads);
-  }
+
+  return 0;
 }

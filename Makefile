@@ -10,7 +10,7 @@ tmp  := $(shell mkdir -p $(ODIR))
 # Basic compiler configuration and flags
 CXX      = g++
 CXXFLAGS = -fgnu-tm -O3 -std=gnu++11
-LDFLAGS	 = -L$(CONTRIB)/target/lib -Wl,-rpath,$(CONTRIB)/target/lib -lpthread -litmtiny
+LDFLAGS	 = -L$(CONTRIB)/target/lib -Wl,-rpath,$(CONTRIB)/target/lib -lpthread -litm
 
 # The basenames of the c++ files that this program uses
 CXXFILES = main murmur3_hash

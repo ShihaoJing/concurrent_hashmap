@@ -8,7 +8,7 @@
 #include "map.h"
 #include <iostream>
 
-#define LIMIT 10
+#define LIMIT 100
 
 template <typename T>
 class cuckoo_map : public BaseMap<T> {
@@ -16,7 +16,6 @@ private:
   T **secondary_table;
 
   void resize() override {
-    std::cout << "resize happening" << std::endl;
     size_t oldCapacity = this->cap;
     this->cap = this->cap << 1;
     
