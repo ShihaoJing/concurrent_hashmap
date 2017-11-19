@@ -5,12 +5,25 @@
 #ifndef PARALLEL_CONCURRENCY_SEQ_MAP_H
 #define PARALLEL_CONCURRENCY_SEQ_MAP_H
 
-#include "map.h"
 #include <unordered_set>
 #include <cstddef>
 #include <cstdint>
 #include <random>
 #include <iostream>
+
+
+enum class node_state {
+  FREE,
+  IN_USE,
+  ERASED
+};
+
+template<typename T>
+struct node {
+  T key;
+  node_state state = node_state::FREE;
+};
+
 
 template <typename T, typename Hash = std::hash<T>>
 class seq_map {

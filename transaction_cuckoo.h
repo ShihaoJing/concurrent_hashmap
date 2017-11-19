@@ -2,13 +2,13 @@
 // Created by Shihao Jing on 11/12/17.
 //
 
-#ifndef PARALLEL_CONCURRENCY_CUCKOO_MAP_H
-#define PARALLEL_CONCURRENCY_CUCKOO_MAP_H
+#ifndef PARALLEL_CONCURRENCY_TRANSACTION_CUCKOO_MAP_H
+#define PARALLEL_CONCURRENCY_TRANSACTION_CUCKOO_MAP_H
 
 #include <iostream>
 
 template <typename T, typename Hash = std::hash<T>>
-class cuckoo_map {
+class transaction_cuckoo_map {
 private:
   size_t cap;
   size_t count;
@@ -23,14 +23,22 @@ private:
     return h(y) + 1295871;
   }
 
-  void resize() {
-    size_t oldCapacity = cap;
-    T** old_tables[2] = {tables[0], tables[1]};
 
+  void resize(size_t old_cap) {
+    T **old_tables[2];
+
+    __transaction_atomic {
+
+    if (old_cap != cap) {
+        return;
+    }
+
+    old_tables[0] = tables[0];
+    old_tables[1] =  tables[1];
 
     cap = (cap << 1);
-    tables[0] = new T*[cap];
-    tables[1] = new T*[cap];
+    tables[0] = (T**)malloc(sizeof(T**) * cap);
+    tables[1] = (T**)malloc(sizeof(T**) * cap);
 
     for (int i = 0; i < 2; ++i) {
       for (int j = 0; j < cap; ++j) {
@@ -39,7 +47,7 @@ private:
     }
 
     for (int i = 0; i < 2; ++i) {
-      for (int j = 0; j < oldCapacity; ++j) {
+      for (int j = 0; j < old_cap; ++j) {
         if (old_tables[i][j] != nullptr) {
           add(*(old_tables[i][j]));
           delete old_tables[i][j];
@@ -49,9 +57,13 @@ private:
 
     delete [] old_tables[0];
     delete [] old_tables[1];
+
+    }
+
   }
+
 public:
-  explicit cuckoo_map(size_t hashpower) : tables{new T*[hashsize(hashpower)], new T*[hashsize(hashpower)]},
+  explicit transaction_cuckoo_map(size_t hashpower) : tables{new T*[hashsize(hashpower)], new T*[hashsize(hashpower)]},
                                           cap(hashsize(hashpower)), count(0)
   {
     for (int i = 0; i < 2; ++i) {
@@ -66,6 +78,8 @@ public:
     uint32_t hv0 = hash0(key);
     uint32_t hv1 = hash1(key);
 
+    __transaction_atomic {
+
     if (tables[0][hv0 & hashmask(cap)] != nullptr &&
         *(tables[0][hv0 & hashmask(cap)]) == key) {
       return true;
@@ -76,14 +90,19 @@ public:
     }
 
     return false;
+
+    }
   }
 
-  bool add(T key) {
+  [[transaction_safe]] bool add(T key) {
     if (contains(key))
       return false;
 
     auto x = new T(key);
+
     for (int i = 0; i < LIMIT; ++i) {
+      __transaction_atomic {
+
       uint32_t hv0 = hash0(*x);
       auto tmp = tables[0][hv0 & hashmask(cap)];
       tables[0][hv0 & hashmask(cap)] = x;
@@ -97,19 +116,25 @@ public:
       x = tmp;
       if (x == nullptr)
         return true;
+
+      }
     }
+
 
     // to avoid memory leak
     key = *x;
     delete x;
 
-    resize();
+    resize(cap);
+
     return add(key);
   }
 
   bool remove(T key) {
     uint32_t hv0 = hash0(key);
     uint32_t hv1 = hash1(key);
+
+    __transaction_atomic {
 
     if (tables[0][hv0 & hashmask(cap)] != nullptr &&
         *(tables[0][hv0 & hashmask(cap)]) == key) {
@@ -125,6 +150,8 @@ public:
     }
 
     return false;
+
+    }
   }
 
   size_t size() {

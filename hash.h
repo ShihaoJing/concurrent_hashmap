@@ -11,6 +11,10 @@
 #define hashsize(n) (1<<(n))
 #define hashmask(n) (n-1)
 
+#define LIMIT 10
+#define PROBE_SIZE 15
+#define THRESHOLD  10
+
 typedef void (*hash_func)(const void *key, int len, uint32_t seed, void *out);
 
 static size_t do_linear(size_t hv, int iter) {
@@ -25,9 +29,6 @@ extern size_t prob(size_t hv, int iter) {
   return do_quadratic(hv, iter);
 }
 
-extern uint32_t hashseed;
-extern uint32_t hashseed2;
-extern hash_func hash;
 extern constexpr size_t LOCK_POWER = 6;
 
 

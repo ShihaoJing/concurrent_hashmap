@@ -3,26 +3,17 @@
 //
 
 #include "hash.h"
-#include "murmur3_hash.h"
 #include "seq_map.h"
 #include "cuckoo_map.h"
 #include "phasedcuckoo_map.h"
 #include "refined_phasedcuckoo_map.h"
+#include "transaction_cuckoo.h"
+#include "transaction_phasedcuckoo.h"
 #include <unordered_set>
 #include <unistd.h>
 #include <thread>
 #include <iostream>
 #include <chrono>
-
-uint32_t hashseed;
-uint32_t hashseed2;
-hash_func hash;
-
-void hash_init() {
-  hashseed = 1240981;
-  hashseed2 = 12590812;
-  hash = MurmurHash3_x86_32;
-}
 
 /// help() - Print a help message
 void help(char *progname) {
@@ -122,8 +113,6 @@ int main(int argc, char** argv) {
   using std::cerr;
   using std::endl;
 
-  hash_init();
-
   // for getopt
   long opt;
   // parameters
@@ -161,7 +150,7 @@ int main(int argc, char** argv) {
   if (test == 's') {
     bench<seq_map<int>>(keyrange, ops, hashpower, ratio, threads);
   }
-  else if (test == 'k') {
+  else if (test == 'c') {
     bench<cuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
   }
   else if (test == 'p') {
@@ -169,6 +158,9 @@ int main(int argc, char** argv) {
   }
   else if (test == 'r') {
     bench<refined_phasedcuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
+  }
+  else if (test == 't') {
+    bench<transaction_phasedcuckoo_map<int>>(keyrange, ops, hashpower, ratio, threads);
   }
 
   return 0;

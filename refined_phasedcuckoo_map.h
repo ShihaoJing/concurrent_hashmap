@@ -50,15 +50,31 @@ class refined_phasedcuckoo_map {
   }
 
   void lock_acquire(T key) {
-    while (resize_lock.test_and_set(std::memory_order_acquire)); // acquire resize lock
 
     size_t hv0 = hash0(key);
     size_t hv1 = hash1(key);
 
-    locks[0][hv0 & hashmask(lock_cap)].lock();
-    locks[1][hv1 & hashmask(lock_cap)].lock();
+    while (true) {
+        while (resize_lock.test_and_set(std::memory_order_acquire)); // acquire resize lock
+        int old_lock_cap = lock_cap;
+        std::mutex* old_locks[2] = {locks[0], locks[1]};
+        resize_lock.clear(std::memory_order_release);  // release lock
 
-    resize_lock.clear(std::memory_order_release);  // release lock
+
+        old_locks[0][hv0 & hashmask(old_lock_cap)].lock();
+        old_locks[1][hv1 & hashmask(old_lock_cap)].lock();
+
+        if (old_lock_cap != lock_cap) {
+            old_locks[0][hv0 & hashmask(old_lock_cap)].unlock();
+            old_locks[1][hv1 & hashmask(old_lock_cap)].unlock();
+        }
+        else {
+            return;
+        }
+    }
+
+    //locks[0][hv0 & hashmask(lock_cap)].lock();
+    //locks[1][hv1 & hashmask(lock_cap)].lock();
   }
 
   void lock_release(T key) {
@@ -132,8 +148,9 @@ class refined_phasedcuckoo_map {
       locks[0][i].unlock();
     }
 
-    delete [] locks[0];
-    delete [] locks[1];
+    /*must have memory leak*/
+    //delete [] locks[0];
+    //delete [] locks[1];
 
     lock_cap = (lock_cap << 1);
     locks[0] = new std::mutex[lock_cap];

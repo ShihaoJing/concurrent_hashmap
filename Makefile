@@ -13,7 +13,7 @@ CXXFLAGS = -fgnu-tm -O3 -std=gnu++11
 LDFLAGS	 = -L$(CONTRIB)/target/lib -Wl,-rpath,$(CONTRIB)/target/lib -lpthread -litm
 
 # The basenames of the c++ files that this program uses
-CXXFILES = main murmur3_hash
+CXXFILES = main
 
 # The executable we will build
 TARGET = $(ODIR)/main
