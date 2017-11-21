@@ -43,10 +43,9 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
   set_t my_set(hashpower);
   my_set.populate();
 
-  int inserted[nthreads];
-  int removed[nthreads];
+  int count[nthreads];
   for (int j = 0; j < nthreads; ++j)
-    inserted[j] = removed[j] = 0;
+    count[j] = 0;
 
   auto work = [&](int tid) {
     std::random_device r;
@@ -59,11 +58,11 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
       int action = ratio_rand(e);
       if (action <= ratio) {
         if (my_set.add(key))
-          ++inserted[tid];
+          ++count[tid];
       }
       else {
         if (my_set.remove(key))
-          ++removed[tid];
+          --count[tid];
       }
     }
   };
@@ -92,7 +91,7 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
 
   int expect_size = 1024;
   for (int i = 0; i < nthreads; ++i) {
-    expect_size += (inserted[i] - removed[i]);
+    expect_size += count[i];
   }
 
   int set_size = my_set.size();
