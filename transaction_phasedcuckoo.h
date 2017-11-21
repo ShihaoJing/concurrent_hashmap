@@ -36,11 +36,11 @@ class transaction_phasedcuckoo_map {
   }
 
   size_t hash0(T y) {
-    return h(y);
+    return h(y) + 0x79b9;
   }
 
   size_t hash1(T y) {
-    return h(y) + 1295871;
+    return h(y) + 0x7905;
   }
 
   void add_no_lock(T key) {
@@ -83,15 +83,14 @@ class transaction_phasedcuckoo_map {
 
     for (int i = 0; i < 2; ++i) {
       for (int j = 0; j < old_capacity; ++j) {
-        set<T> &old_set = old_tables[i][j];
-        for (int k = 0; k < old_set.size(); ++k) {
-          add_no_lock(old_set.get(k));
+        for (int k = 0; k < old_tables[i][j].size(); ++k) {
+          add_no_lock(old_tables[i][j].get(k));
         }
       }
     }
 
-    delete [] old_tables[0];
-    delete [] old_tables[1];
+    //delete [] old_tables[0];
+    //delete [] old_tables[1];
 
     }
 
@@ -101,6 +100,7 @@ class transaction_phasedcuckoo_map {
     size_t hvj = 0;
     int j = 1 - i;
     for (int round = 0; round < LIMIT; ++round) {
+
       T y = tables[i][hvi & hashmask(cap)].get(0);
       switch (i) {
         case 0: 
@@ -216,7 +216,6 @@ class transaction_phasedcuckoo_map {
 
     }
 
-
     if (must_resize) {
       resize(cap);
       return add(key);
@@ -226,6 +225,14 @@ class transaction_phasedcuckoo_map {
     }
 
     return true;
+  }
+
+  void populate() {
+    int i = 1024;
+    while (i) {
+      if (add(rand()))
+        --i;
+    }
   }
 
   size_t size() {

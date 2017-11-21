@@ -7,7 +7,7 @@
 #include "cuckoo_map.h"
 #include "phasedcuckoo_map.h"
 #include "refined_phasedcuckoo_map.h"
-#include "transaction_cuckoo.h"
+//#include "transaction_cuckoo.h"
 #include "transaction_phasedcuckoo.h"
 #include <unordered_set>
 #include <unistd.h>
@@ -39,30 +39,29 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
   using std::chrono::duration;
 
 
-  std::random_device r;
-  std::default_random_engine e(r());
-  std::uniform_int_distribution<int> key_rand(0, keyrange);
-  std::uniform_int_distribution<int> ratio_rand(1, 100);
 
   set_t my_set(hashpower);
+  my_set.populate();
 
   int inserted[nthreads];
   int removed[nthreads];
   for (int j = 0; j < nthreads; ++j)
     inserted[j] = removed[j] = 0;
 
-  std::unordered_set<int> set;
   auto work = [&](int tid) {
+    std::random_device r;
+    std::default_random_engine e(r());
+    std::uniform_int_distribution<int> key_rand(0, keyrange);
+    std::uniform_int_distribution<int> ratio_rand(1, 100);
+
     for (int i = 0; i < iters; ++i) {
       int key = key_rand(e);
       int action = ratio_rand(e);
       if (action <= ratio) {
-        //set.insert(key);
         if (my_set.add(key))
           ++inserted[tid];
       }
       else {
-        //set.erase(key);
         if (my_set.remove(key))
           ++removed[tid];
       }
@@ -91,7 +90,7 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
   printf("latency: %f ms\n", exec_time);
   printf("Ops per seccond: %f \n", iters / (exec_time / 1000));
 
-  int expect_size = 0;
+  int expect_size = 1024;
   for (int i = 0; i < nthreads; ++i) {
     expect_size += (inserted[i] - removed[i]);
   }
@@ -100,7 +99,6 @@ void bench(unsigned keyrange, unsigned iters, unsigned hashpower, unsigned ratio
 
   cout << "expect_size: " << expect_size << endl;
   cout << "set_size     " << set_size << endl;
-  cout << "std set size " << set.size() << endl;
 
   if (expect_size == set_size)
     cout << "expect_size == my_set.size()" << endl;

@@ -12,8 +12,8 @@
 #define hashmask(n) (n-1)
 
 #define LIMIT 10
-#define PROBE_SIZE 15
-#define THRESHOLD  10
+#define PROBE_SIZE 4
+#define THRESHOLD  2
 
 typedef void (*hash_func)(const void *key, int len, uint32_t seed, void *out);
 
@@ -29,7 +29,7 @@ extern size_t prob(size_t hv, int iter) {
   return do_quadratic(hv, iter);
 }
 
-extern constexpr size_t LOCK_POWER = 6;
+extern constexpr size_t LOCK_POWER = 16;
 
 
 #endif //PARALLEL_CONCURRENCY_HASH_H

@@ -297,6 +297,14 @@ class refined_phasedcuckoo_map {
     return true;
   }
 
+  void populate() {
+    int i = 1024;
+    while (i) {
+      if (add(rand()))
+        --i;
+    }
+  }
+
   size_t size() {
     validate();
 

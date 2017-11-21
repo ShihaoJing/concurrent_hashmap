@@ -11,7 +11,10 @@
 #include <algorithm>
 #include <list>
 #include <cmath>
+#include <atomic>
+#include <queue>
 
+using namespace std;
 
 template <typename T>
 class set {
@@ -26,9 +29,11 @@ class set {
   }
 
   ~set() {
+    /* 
     for (int i = 0; i < count; ++i)
       delete data[i];
-    delete [] data;
+    delete [] data; 
+    */
   }
 
   size_t size() {
@@ -37,7 +42,7 @@ class set {
 
   bool contains(T key) {
     for (int i = 0; i < count; ++i) {
-      if (*(data[i]) == key) {
+      if (*data[i] == key) {
         return true;
       }
     }
@@ -54,12 +59,10 @@ class set {
 
   bool remove(T key) {
     for (int i = 0; i < count; ++i) {
-      if (*(data[i]) == key) {
-        delete data[i];
-        data[i] = nullptr;
+      if (*data[i] == key) {
+        //delete data[i];
         for (int j = i+1; j < count; ++j) {
-          data[i++] = data[j];
-          data[j] = nullptr;
+          data[j-1] = data[j];
         }
         --count;
         return true;
@@ -67,17 +70,16 @@ class set {
     }
     return false;
   }
-};
+};  
 
 template <typename T, typename Hash = std::hash<T>>
 class phasedcuckoo_map {
  private:
   set<T>* tables[2];
   std::mutex* locks[2];
-  size_t hashpower;
+  std::mutex resize_lock;
   size_t cap;
   size_t lock_cap;
-  size_t size_;
   Hash h;
 
   void validate() {
@@ -95,11 +97,32 @@ class phasedcuckoo_map {
   }
 
   size_t hash0(T y) {
-    return h(y);
+    return h(y) + 0x79b9;
   }
 
   size_t hash1(T y) {
-    return h(y) + 1295871;
+    return h(y) + 0x7905;
+  }
+
+  bool try_lock(T key) {
+    size_t hv0 = hash0(key);
+    size_t hv1 = hash1(key);
+
+    mutex &lock0 = locks[0][hv0 & hashmask(lock_cap)];
+    mutex &lock1 = locks[1][hv1 & hashmask(lock_cap)];
+
+    if (lock0.try_lock()) {
+      if (lock1.try_lock()) {
+        return true;
+      }
+      else {
+        lock0.unlock();
+        return false;
+      }
+    }
+    else {
+      return false;
+    }
   }
 
   void lock_acquire(T key) {
@@ -143,10 +166,11 @@ class phasedcuckoo_map {
   }
 
   void resize(int old_capacity) {
+    lock_guard<mutex> guard(resize_lock);
+
     for (size_t i = 0; i < lock_cap; ++i) {
       locks[0][i].lock();
     }
-
 
     if (old_capacity != cap) {
       for (size_t i = 0; i < lock_cap; ++i) {
@@ -163,26 +187,39 @@ class phasedcuckoo_map {
 
     for (int i = 0; i < 2; ++i) {
       for (int j = 0; j < old_capacity; ++j) {
-        set<T> &old_set = old_tables[i][j];
-        for (int k = 0; k < old_set.size(); ++k) {
-          add_no_lock(old_set.get(k));
+        for (int k = 0; k < old_tables[i][j].size(); ++k) {
+          add_no_lock(old_tables[i][j].get(k));
         }
       }
     }
 
-    delete [] old_tables[0];
-    delete [] old_tables[1];
+    //delete [] old_tables[0];
+    //delete [] old_tables[1];
 
     for (size_t i = 0; i < lock_cap; ++i) {
       locks[0][i].unlock();
     }
   }
 
-  bool relocate(int i, size_t hvi) {
+  bool relocate(int i, size_t hvi, int old_capacity) {
     size_t hvj = 0;
     int j = 1 - i;
     for (int round = 0; round < LIMIT; ++round) {
+      resize_lock.lock();
+
+      if (old_capacity != cap) {
+        resize_lock.unlock();
+        return true;
+      }
+
       T y = tables[i][hvi & hashmask(cap)].get(0);
+
+      if (try_lock(y) == false) {
+        resize_lock.unlock();
+        --round;
+        continue;
+      }
+
       switch (i) {
         case 0: 
           hvj = hash1(y);
@@ -192,11 +229,10 @@ class phasedcuckoo_map {
           break;
       }
 
-      lock_acquire(y);
-
       // resize may happend before
       if (tables[i][hvi & hashmask(cap)].size() < THRESHOLD) {
         lock_release(y);
+        resize_lock.unlock();
         return true;
       }
 
@@ -204,6 +240,7 @@ class phasedcuckoo_map {
         if (tables[j][hvj & hashmask(cap)].size() < THRESHOLD) {
           tables[j][hvj & hashmask(cap)].add(y);
           lock_release(y);
+          resize_lock.unlock();
           return true;
         }
         else if (tables[j][hvj & hashmask(cap)].size() < PROBE_SIZE) {
@@ -212,19 +249,23 @@ class phasedcuckoo_map {
           hvi = hvj;
           j = 1 - j;
           lock_release(y);
+          resize_lock.unlock();
         }
         else {
           tables[i][hvi & hashmask(cap)].add(y);
           lock_release(y);
+          resize_lock.unlock();
           return false;
         }
       }
       else if (tables[i][hvi & hashmask(cap)].size() >= THRESHOLD) {
         lock_release(y);
+        resize_lock.unlock();
         continue;
       }
       else {
         lock_release(y);
+        resize_lock.unlock();
         return true;
       }
     }
@@ -235,8 +276,7 @@ class phasedcuckoo_map {
  public:
   explicit phasedcuckoo_map(size_t capacity) : tables{new set<T>[hashsize(capacity)], new set<T>[hashsize(capacity)]},
                                                locks{new std::mutex[hashsize(LOCK_POWER)], new std::mutex[hashsize(LOCK_POWER)]},
-                                               hashpower(capacity),
-                                               cap(hashsize(capacity)), lock_cap(hashsize(LOCK_POWER)), size_(0)
+                                               cap(hashsize(capacity)), lock_cap(hashsize(LOCK_POWER))
   {
 
   }
@@ -246,11 +286,7 @@ class phasedcuckoo_map {
 
     size_t hv0 = hash0(key);
     size_t hv1 = hash1(key);
-
-    if (hv0 == hv1) {
-      throw std::logic_error("Unexpected: sample hash");
-    }
-
+    
     if (tables[0][hv0 & hashmask(cap)].contains(key)) {
       tables[0][hv0 & hashmask(cap)].remove(key);
       lock_release(key);
@@ -276,9 +312,6 @@ class phasedcuckoo_map {
 
     size_t hv0 = hash0(key);
     size_t hv1 = hash1(key);
-    if (hv0 == hv1) {
-      throw std::logic_error("Unexpected: sample hash");
-    }
 
     if (tables[0][hv0 & hashmask(cap)].contains(key) || tables[1][hv1 & hashmask(cap)].contains(key)) {
       lock_release(key);
@@ -297,7 +330,6 @@ class phasedcuckoo_map {
     }
     else if (tables[0][hv0 & hashmask(cap)].size() < PROBE_SIZE) {
       tables[0][hv0 & hashmask(cap)].add(key);
-
       i = 0;
       h = hv0;
     }
@@ -316,11 +348,19 @@ class phasedcuckoo_map {
       resize(cap);
       return add(key);
     }
-    else if (!relocate(i, h)) {
+    else if (!relocate(i, h, cap)) {
       resize(cap);
-    }
+    } 
 
     return true;
+  }
+
+  void populate() {
+    int i = 1024;
+    while (i) {
+      if (add(rand()))
+        --i;
+    }
   }
 
   size_t size() {

@@ -130,6 +130,14 @@ public:
     throw std::logic_error("Unexpected case in remove");
   }
 
+  void populate() {
+    int i = 1024;
+    while (i) {
+      if (add(rand()))
+        --i;
+    }
+  }
+
   size_t size() {
     std::cout << "validating in size" << std::endl;
     validate();

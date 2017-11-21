@@ -127,6 +127,14 @@ public:
     return false;
   }
 
+  void populate() {
+    int i = 1024;
+    while (i) {
+      if (add(rand()))
+        --i;
+    }
+  }
+
   size_t size() {
     size_t ret = 0;
     for (int i = 0; i < 2; ++i) {
